@@ -56,6 +56,12 @@
       ]
     }
   },
-  "calendarNotes": {},
-  "updatedAt": "2026-03-31T10:00:00.000Z"
+  "calendarNotes": {
+    "2026-03-31": {
+      "date": "2026-03-31",
+      "content": "Render fallback save test",
+      "updatedAt": "2026-03-31T09:50:56.491Z"
+    }
+  },
+  "updatedAt": "2026-03-31T12:00:00.000Z"
 }

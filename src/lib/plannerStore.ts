@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Collection, MongoClient, ServerApiVersion } from "mongodb";
@@ -75,17 +75,18 @@ const plannerDocumentId = "main";
 
 type PlannerDocument = PlannerData & { _id: string };
 
-let plannerCollectionPromise: Promise<Collection<PlannerDocument>> | undefined;
+let plannerCollectionPromise:
+  | Promise<Collection<PlannerDocument> | null>
+  | undefined;
+let usingFileStorage = false;
 
 const cloneDefaultData = (): PlannerData => structuredClone(defaultPlannerData);
 
-function getMongoUri(): string {
-  const mongoUri = process.env.MONGODB_URI;
+function getMongoUri(): string | null {
+  const mongoUri = process.env.MONGODB_URI?.trim();
 
-  if (!mongoUri) {
-    throw new Error(
-      "Missing MONGODB_URI. Add your MongoDB Atlas connection string to the environment.",
-    );
+  if (!mongoUri || mongoUri.includes("<") || mongoUri.includes(">")) {
+    return null;
   }
 
   return mongoUri;
@@ -105,9 +106,29 @@ async function loadSeedData(): Promise<PlannerData> {
   }
 }
 
-async function getPlannerCollection(): Promise<Collection<PlannerDocument>> {
+async function writeLocalPlannerData(data: PlannerData): Promise<void> {
+  const parsedData = plannerDataSchema.parse(data);
+  await mkdir(path.dirname(dataFilePath), { recursive: true });
+  await writeFile(dataFilePath, JSON.stringify(parsedData, null, 2), "utf-8");
+}
+
+async function getPlannerCollection(): Promise<Collection<PlannerDocument> | null> {
+  if (usingFileStorage) {
+    return null;
+  }
+
+  const mongoUri = getMongoUri();
+
+  if (!mongoUri) {
+    usingFileStorage = true;
+    console.warn(
+      "MONGODB_URI is missing or still using the template placeholder. Falling back to local JSON storage.",
+    );
+    return null;
+  }
+
   if (!plannerCollectionPromise) {
-    const client = new MongoClient(getMongoUri(), {
+    const client = new MongoClient(mongoUri, {
       serverApi: {
         version: ServerApiVersion.v1,
         strict: true,
@@ -119,7 +140,15 @@ async function getPlannerCollection(): Promise<Collection<PlannerDocument>> {
     plannerCollectionPromise = client
       .connect()
       .then((connectedClient) => connectedClient.db(getMongoDbName()))
-      .then((database) => database.collection<PlannerDocument>("planner"));
+      .then((database) => database.collection<PlannerDocument>("planner"))
+      .catch((error) => {
+        usingFileStorage = true;
+        console.warn(
+          "MongoDB connection failed. Falling back to local JSON storage.",
+          error,
+        );
+        return null;
+      });
   }
 
   return plannerCollectionPromise;
@@ -131,6 +160,11 @@ export async function initializePlannerStore(): Promise<void> {
 
 export async function readPlannerData(): Promise<PlannerData> {
   const collection = await getPlannerCollection();
+
+  if (!collection) {
+    return loadSeedData();
+  }
+
   const existing = await collection.findOne({ _id: plannerDocumentId });
 
   if (existing) {
@@ -152,8 +186,13 @@ export async function readPlannerData(): Promise<PlannerData> {
 }
 
 export async function writePlannerData(data: PlannerData): Promise<void> {
-  const collection = await getPlannerCollection();
   const parsedData = plannerDataSchema.parse(data);
+  const collection = await getPlannerCollection();
+
+  if (!collection) {
+    await writeLocalPlannerData(parsedData);
+    return;
+  }
 
   await collection.updateOne(
     { _id: plannerDocumentId },
