@@ -29,6 +29,20 @@ export const calendarNoteSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
+export const galleryImageSchema = z.object({
+  id: z.string().min(1),
+  publicId: z.string().min(1),
+  url: z.string().url(),
+  thumbnailUrl: z.string().url(),
+  alt: z.string().max(200).default(""),
+  uploadedAt: z.string().datetime(),
+});
+
+export const gallerySchema = z.object({
+  featuredImageId: z.string().nullable().default(null),
+  images: z.array(galleryImageSchema).default([]),
+});
+
 export const plannerDataSchema = z.object({
   pageContent: pageContentSchema,
   checklists: z.object({
@@ -36,6 +50,7 @@ export const plannerDataSchema = z.object({
     artworks: checklistSchema.extend({ id: z.literal("artworks") }),
   }),
   calendarNotes: z.record(z.string(), calendarNoteSchema),
+  gallery: gallerySchema.default({ featuredImageId: null, images: [] }),
   updatedAt: z.string().datetime(),
 });
 
@@ -62,9 +77,15 @@ export const calendarNoteUpsertSchema = z.object({
   content: z.string().max(20000),
 });
 
+export const galleryFeaturedUpdateSchema = z.object({
+  imageId: z.string().nullable(),
+});
+
 export type ChecklistId = z.infer<typeof checklistIdSchema>;
 export type PageContent = z.infer<typeof pageContentSchema>;
 export type ChecklistItem = z.infer<typeof checklistItemSchema>;
 export type Checklist = z.infer<typeof checklistSchema>;
 export type CalendarNote = z.infer<typeof calendarNoteSchema>;
+export type GalleryImage = z.infer<typeof galleryImageSchema>;
+export type Gallery = z.infer<typeof gallerySchema>;
 export type PlannerData = z.infer<typeof plannerDataSchema>;

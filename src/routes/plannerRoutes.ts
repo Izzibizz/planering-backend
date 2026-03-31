@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import multer from "multer";
 import { Router } from "express";
 import { ZodError } from "zod";
 import {
@@ -7,9 +8,15 @@ import {
   checklistIdSchema,
   checklistIds,
   checklistUpdateItemSchema,
+  galleryFeaturedUpdateSchema,
+  gallerySchema,
   pageContentUpdateSchema,
   type PlannerData,
 } from "../schema/planner.js";
+import {
+  deleteImageFromCloudinary,
+  uploadImageBuffer,
+} from "../lib/cloudinary.js";
 import {
   getPlannerStorageMode,
   readPlannerData,
@@ -19,6 +26,13 @@ import {
 const router = Router();
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 10,
+  },
+});
 
 const sendValidationError = (
   res: Router extends never ? never : any,
@@ -157,6 +171,14 @@ const mergePlannerUpdate = (
     );
   }
 
+  if (isRecord(payload.gallery)) {
+    const parsedGallery = gallerySchema.safeParse(payload.gallery);
+
+    if (parsedGallery.success) {
+      currentData.gallery = parsedGallery.data;
+    }
+  }
+
   currentData.updatedAt =
     typeof payload.updatedAt === "string" && payload.updatedAt
       ? payload.updatedAt
@@ -230,6 +252,113 @@ router.put("/content", async (request, response) => {
 
     throw error;
   }
+});
+
+router.get("/gallery", async (_request, response) => {
+  const plannerData = await readPlannerData();
+  response.json(plannerData.gallery);
+});
+
+router.post(
+  "/gallery/upload",
+  upload.array("images", 10),
+  async (request, response) => {
+    const files = Array.isArray(request.files) ? request.files : [];
+
+    if (files.length === 0) {
+      return response.status(400).json({ message: "No images were uploaded." });
+    }
+
+    const altText =
+      typeof request.body.alt === "string" ? request.body.alt.trim() : "";
+    const plannerData = await readPlannerData();
+    const uploadedAt = new Date().toISOString();
+
+    const uploadedImages = await Promise.all(
+      files.map(async (file) => {
+        const fallbackAlt = file.originalname.replace(/\.[^.]+$/, "") || "Bild";
+        const uploadedImage = await uploadImageBuffer(file.buffer, fallbackAlt);
+
+        return {
+          id: randomUUID(),
+          publicId: uploadedImage.publicId,
+          url: uploadedImage.url,
+          thumbnailUrl: uploadedImage.thumbnailUrl,
+          alt: altText || fallbackAlt,
+          uploadedAt,
+        };
+      }),
+    );
+
+    plannerData.gallery.images = [
+      ...uploadedImages,
+      ...plannerData.gallery.images,
+    ];
+
+    if (!plannerData.gallery.featuredImageId && uploadedImages[0]) {
+      plannerData.gallery.featuredImageId = uploadedImages[0].id;
+    }
+
+    plannerData.updatedAt = uploadedAt;
+    await writePlannerData(plannerData);
+
+    response.status(201).json(plannerData.gallery);
+  },
+);
+
+router.put("/gallery/featured", async (request, response) => {
+  try {
+    const { imageId } = galleryFeaturedUpdateSchema.parse(request.body);
+    const plannerData = await readPlannerData();
+
+    if (
+      imageId !== null &&
+      !plannerData.gallery.images.some((image) => image.id === imageId)
+    ) {
+      return response.status(404).json({ message: "Image not found." });
+    }
+
+    plannerData.gallery.featuredImageId = imageId;
+    plannerData.updatedAt = new Date().toISOString();
+
+    await writePlannerData(plannerData);
+    response.json(plannerData.gallery);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return sendValidationError(response, error);
+    }
+
+    throw error;
+  }
+});
+
+router.delete("/gallery/:imageId", async (request, response) => {
+  const plannerData = await readPlannerData();
+  const image = plannerData.gallery.images.find(
+    (entry) => entry.id === request.params.imageId,
+  );
+
+  if (!image) {
+    return response.status(404).json({ message: "Image not found." });
+  }
+
+  plannerData.gallery.images = plannerData.gallery.images.filter(
+    (entry) => entry.id !== request.params.imageId,
+  );
+
+  if (plannerData.gallery.featuredImageId === request.params.imageId) {
+    plannerData.gallery.featuredImageId =
+      plannerData.gallery.images[0]?.id ?? null;
+  }
+
+  plannerData.updatedAt = new Date().toISOString();
+  await writePlannerData(plannerData);
+
+  void deleteImageFromCloudinary(image.publicId).catch((error) => {
+    console.warn("Failed to delete image from Cloudinary.", error);
+  });
+
+  response.status(204).send();
 });
 
 router.get("/checklists", async (_request, response) => {

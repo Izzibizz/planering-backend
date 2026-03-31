@@ -2,29 +2,29 @@
   "pageContent": {
     "badge": "Planering",
     "title": "Utställning Västerås 25 april - 10 maj 2026",
-    "subtitle": "A light planning view for your exhibition calendar, personal tasks, and artwork checklist."
+    "subtitle": "En enkel planeringsvy för utställningskalendern, personliga uppgifter och konstlistan."
   },
   "checklists": {
     "personal": {
       "id": "personal",
-      "title": "My Checklist",
-      "description": "Add tasks, mark them as done, and remove them anytime.",
+      "title": "Min checklista",
+      "description": "Lägg till uppgifter, markera dem som klara och ta bort dem när du vill.",
       "items": [
         {
           "id": "personal-1",
-          "text": "Plan tomorrow's tasks",
+          "text": "Planera morgondagens uppgifter",
           "done": true,
           "createdAt": "2026-03-31T08:00:00.000Z"
         },
         {
           "id": "personal-2",
-          "text": "Buy groceries",
+          "text": "Handla mat",
           "done": false,
           "createdAt": "2026-03-31T08:05:00.000Z"
         },
         {
           "id": "personal-3",
-          "text": "Reply to emails",
+          "text": "Svara på mejl",
           "done": false,
           "createdAt": "2026-03-31T08:10:00.000Z"
         }
@@ -32,24 +32,24 @@
     },
     "artworks": {
       "id": "artworks",
-      "title": "Artworks to do",
-      "description": "Track artwork ideas, ongoing pieces, and finished work.",
+      "title": "Konst att göra",
+      "description": "Följ idéer, pågående verk och färdiga arbeten.",
       "items": [
         {
           "id": "artwork-1",
-          "text": "Finish portrait sketch",
+          "text": "Gör klart porträttskissen",
           "done": false,
           "createdAt": "2026-03-31T09:00:00.000Z"
         },
         {
           "id": "artwork-2",
-          "text": "Prime the new canvas",
+          "text": "Grunda den nya duken",
           "done": false,
           "createdAt": "2026-03-31T09:05:00.000Z"
         },
         {
           "id": "artwork-3",
-          "text": "Photograph completed artwork",
+          "text": "Fotografera det färdiga verket",
           "done": true,
           "createdAt": "2026-03-31T09:10:00.000Z"
         }
@@ -62,6 +62,10 @@
       "content": "Render fallback save test",
       "updatedAt": "2026-03-31T09:50:56.491Z"
     }
+  },
+  "gallery": {
+    "featuredImageId": null,
+    "images": []
   },
   "updatedAt": "2026-03-31T12:00:00.000Z"
 }
