@@ -82,6 +82,18 @@ let usingFileStorage = false;
 
 const cloneDefaultData = (): PlannerData => structuredClone(defaultPlannerData);
 
+function canUseFileStorageFallback(): boolean {
+  const isRenderEnvironment =
+    process.env.RENDER === "true" ||
+    Boolean(process.env.RENDER_SERVICE_ID) ||
+    Boolean(process.env.RENDER_EXTERNAL_URL);
+
+  return (
+    process.env.ALLOW_FILE_STORAGE_FALLBACK === "true" ||
+    (!isRenderEnvironment && process.env.NODE_ENV !== "production")
+  );
+}
+
 function getMongoUri(): string | null {
   const mongoUri = process.env.MONGODB_URI?.trim();
 
@@ -120,6 +132,12 @@ async function getPlannerCollection(): Promise<Collection<PlannerDocument> | nul
   const mongoUri = getMongoUri();
 
   if (!mongoUri) {
+    if (!canUseFileStorageFallback()) {
+      throw new Error(
+        "MONGODB_URI is missing in production. Refusing to fall back to local JSON storage on Render's ephemeral disk.",
+      );
+    }
+
     usingFileStorage = true;
     console.warn(
       "MONGODB_URI is missing or still using the template placeholder. Falling back to local JSON storage.",
@@ -142,6 +160,10 @@ async function getPlannerCollection(): Promise<Collection<PlannerDocument> | nul
       .then((connectedClient) => connectedClient.db(getMongoDbName()))
       .then((database) => database.collection<PlannerDocument>("planner"))
       .catch((error) => {
+        if (!canUseFileStorageFallback()) {
+          throw error;
+        }
+
         usingFileStorage = true;
         console.warn(
           "MongoDB connection failed. Falling back to local JSON storage.",
@@ -156,6 +178,10 @@ async function getPlannerCollection(): Promise<Collection<PlannerDocument> | nul
 
 export async function initializePlannerStore(): Promise<void> {
   await readPlannerData();
+}
+
+export function getPlannerStorageMode(): "file" | "mongo" {
+  return usingFileStorage ? "file" : "mongo";
 }
 
 export async function readPlannerData(): Promise<PlannerData> {

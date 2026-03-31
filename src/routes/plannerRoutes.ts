@@ -10,7 +10,11 @@ import {
   pageContentUpdateSchema,
   type PlannerData,
 } from "../schema/planner.js";
-import { readPlannerData, writePlannerData } from "../lib/plannerStore.js";
+import {
+  getPlannerStorageMode,
+  readPlannerData,
+  writePlannerData,
+} from "../lib/plannerStore.js";
 
 const router = Router();
 
@@ -38,7 +42,9 @@ const mergePlannerUpdate = (
   }
 
   if (isRecord(payload.pageContent)) {
-    const parsedPageContent = pageContentUpdateSchema.safeParse(payload.pageContent);
+    const parsedPageContent = pageContentUpdateSchema.safeParse(
+      payload.pageContent,
+    );
 
     if (parsedPageContent.success) {
       currentData.pageContent = {
@@ -63,7 +69,8 @@ const mergePlannerUpdate = (
               return [];
             }
 
-            const text = typeof entry.text === "string" ? entry.text.trim() : "";
+            const text =
+              typeof entry.text === "string" ? entry.text.trim() : "";
             if (!text) {
               return [];
             }
@@ -160,7 +167,7 @@ const mergePlannerUpdate = (
 
 router.get("/health", async (_request, response) => {
   await readPlannerData();
-  response.json({ status: "ok" });
+  response.json({ status: "ok", storage: getPlannerStorageMode() });
 });
 
 router.get("/planner", async (_request, response) => {
@@ -169,10 +176,14 @@ router.get("/planner", async (_request, response) => {
 });
 
 const savePlannerHandler = async (
-  request: Parameters<typeof router.patch>[1] extends (...args: infer T) => unknown
+  request: Parameters<typeof router.patch>[1] extends (
+    ...args: infer T
+  ) => unknown
     ? T[0]
     : never,
-  response: Parameters<typeof router.patch>[1] extends (...args: infer T) => unknown
+  response: Parameters<typeof router.patch>[1] extends (
+    ...args: infer T
+  ) => unknown
     ? T[1]
     : never,
 ) => {
