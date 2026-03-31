@@ -5,8 +5,10 @@ import {
   calendarNoteUpsertSchema,
   checklistCreateItemSchema,
   checklistIdSchema,
+  checklistIds,
   checklistUpdateItemSchema,
   pageContentUpdateSchema,
+  type PlannerData,
 } from "../schema/planner.js";
 import { readPlannerData, writePlannerData } from "../lib/plannerStore.js";
 
@@ -24,6 +26,138 @@ const sendValidationError = (
   });
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const mergePlannerUpdate = (
+  currentData: PlannerData,
+  payload: unknown,
+): PlannerData => {
+  if (!isRecord(payload)) {
+    return currentData;
+  }
+
+  if (isRecord(payload.pageContent)) {
+    const parsedPageContent = pageContentUpdateSchema.safeParse(payload.pageContent);
+
+    if (parsedPageContent.success) {
+      currentData.pageContent = {
+        ...currentData.pageContent,
+        ...parsedPageContent.data,
+      };
+    }
+  }
+
+  if (isRecord(payload.checklists)) {
+    for (const listId of checklistIds) {
+      const currentList = currentData.checklists[listId];
+      const candidateList = payload.checklists[listId];
+
+      if (!isRecord(candidateList)) {
+        continue;
+      }
+
+      const nextItems = Array.isArray(candidateList.items)
+        ? candidateList.items.flatMap((entry) => {
+            if (!isRecord(entry)) {
+              return [];
+            }
+
+            const text = typeof entry.text === "string" ? entry.text.trim() : "";
+            if (!text) {
+              return [];
+            }
+
+            return [
+              {
+                id:
+                  typeof entry.id === "string" && entry.id.trim()
+                    ? entry.id
+                    : randomUUID(),
+                text,
+                done: Boolean(entry.done),
+                createdAt:
+                  typeof entry.createdAt === "string" && entry.createdAt
+                    ? entry.createdAt
+                    : new Date().toISOString(),
+              },
+            ];
+          })
+        : currentList.items;
+
+      (currentData.checklists as Record<string, typeof currentList>)[listId] = {
+        ...currentList,
+        title:
+          typeof candidateList.title === "string" && candidateList.title.trim()
+            ? candidateList.title.trim()
+            : currentList.title,
+        description:
+          typeof candidateList.description === "string"
+            ? candidateList.description
+            : currentList.description,
+        items: nextItems,
+      };
+    }
+  }
+
+  if (isRecord(payload.calendarNotes)) {
+    currentData.calendarNotes = Object.fromEntries(
+      Object.entries(payload.calendarNotes)
+        .filter(([date]) => datePattern.test(date))
+        .flatMap(([date, noteValue]) => {
+          if (typeof noteValue === "string") {
+            const content = noteValue.trim();
+
+            if (!content) {
+              return [];
+            }
+
+            return [
+              [
+                date,
+                {
+                  date,
+                  content: noteValue,
+                  updatedAt: new Date().toISOString(),
+                },
+              ],
+            ];
+          }
+
+          if (!isRecord(noteValue) || typeof noteValue.content !== "string") {
+            return [];
+          }
+
+          const content = noteValue.content.trim();
+          if (!content) {
+            return [];
+          }
+
+          return [
+            [
+              date,
+              {
+                date,
+                content: noteValue.content,
+                updatedAt:
+                  typeof noteValue.updatedAt === "string"
+                    ? noteValue.updatedAt
+                    : new Date().toISOString(),
+              },
+            ],
+          ];
+        }),
+    );
+  }
+
+  currentData.updatedAt =
+    typeof payload.updatedAt === "string" && payload.updatedAt
+      ? payload.updatedAt
+      : new Date().toISOString();
+
+  return currentData;
+};
+
 router.get("/health", async (_request, response) => {
   await readPlannerData();
   response.json({ status: "ok" });
@@ -33,6 +167,32 @@ router.get("/planner", async (_request, response) => {
   const plannerData = await readPlannerData();
   response.json(plannerData);
 });
+
+const savePlannerHandler = async (
+  request: Parameters<typeof router.patch>[1] extends (...args: infer T) => unknown
+    ? T[0]
+    : never,
+  response: Parameters<typeof router.patch>[1] extends (...args: infer T) => unknown
+    ? T[1]
+    : never,
+) => {
+  try {
+    const plannerData = await readPlannerData();
+    const nextPlannerData = mergePlannerUpdate(plannerData, request.body);
+
+    await writePlannerData(nextPlannerData);
+    response.json(nextPlannerData);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return sendValidationError(response, error);
+    }
+
+    throw error;
+  }
+};
+
+router.put("/planner", savePlannerHandler);
+router.patch("/planner", savePlannerHandler);
 
 router.get("/content", async (_request, response) => {
   const plannerData = await readPlannerData();
