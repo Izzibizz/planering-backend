@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Collection, MongoClient, ServerApiVersion } from "mongodb";
 import { plannerDataSchema, type PlannerData } from "../schema/planner.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -70,21 +71,96 @@ const defaultPlannerData: PlannerData = {
   updatedAt: "2026-03-31T10:00:00.000Z",
 };
 
-const cloneDefaultData = () => structuredClone(defaultPlannerData);
+const plannerDocumentId = "main";
 
-export async function readPlannerData(): Promise<PlannerData> {
+type PlannerDocument = PlannerData & { _id: string };
+
+let plannerCollectionPromise: Promise<Collection<PlannerDocument>> | undefined;
+
+const cloneDefaultData = (): PlannerData => structuredClone(defaultPlannerData);
+
+function getMongoUri(): string {
+  const mongoUri = process.env.MONGODB_URI;
+
+  if (!mongoUri) {
+    throw new Error(
+      "Missing MONGODB_URI. Add your MongoDB Atlas connection string to the environment.",
+    );
+  }
+
+  return mongoUri;
+}
+
+function getMongoDbName(): string {
+  return process.env.MONGODB_DB_NAME ?? "planering";
+}
+
+async function loadSeedData(): Promise<PlannerData> {
   try {
     const rawFile = await readFile(dataFilePath, "utf-8");
     const parsed = JSON.parse(rawFile);
     return plannerDataSchema.parse(parsed);
   } catch {
-    const fallback = cloneDefaultData();
-    await writePlannerData(fallback);
-    return fallback;
+    return cloneDefaultData();
   }
 }
 
+async function getPlannerCollection(): Promise<Collection<PlannerDocument>> {
+  if (!plannerCollectionPromise) {
+    const client = new MongoClient(getMongoUri(), {
+      serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+      },
+      serverSelectionTimeoutMS: 5000,
+    });
+
+    plannerCollectionPromise = client
+      .connect()
+      .then((connectedClient) => connectedClient.db(getMongoDbName()))
+      .then((database) => database.collection<PlannerDocument>("planner"));
+  }
+
+  return plannerCollectionPromise;
+}
+
+export async function initializePlannerStore(): Promise<void> {
+  await readPlannerData();
+}
+
+export async function readPlannerData(): Promise<PlannerData> {
+  const collection = await getPlannerCollection();
+  const existing = await collection.findOne({ _id: plannerDocumentId });
+
+  if (existing) {
+    return plannerDataSchema.parse(existing);
+  }
+
+  const seedData = await loadSeedData();
+
+  await collection.updateOne(
+    { _id: plannerDocumentId },
+    {
+      $set: seedData,
+      $setOnInsert: { _id: plannerDocumentId },
+    },
+    { upsert: true },
+  );
+
+  return seedData;
+}
+
 export async function writePlannerData(data: PlannerData): Promise<void> {
-  await mkdir(path.dirname(dataFilePath), { recursive: true });
-  await writeFile(dataFilePath, JSON.stringify(data, null, 2), "utf-8");
+  const collection = await getPlannerCollection();
+  const parsedData = plannerDataSchema.parse(data);
+
+  await collection.updateOne(
+    { _id: plannerDocumentId },
+    {
+      $set: parsedData,
+      $setOnInsert: { _id: plannerDocumentId },
+    },
+    { upsert: true },
+  );
 }

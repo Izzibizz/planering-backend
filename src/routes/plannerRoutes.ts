@@ -24,7 +24,8 @@ const sendValidationError = (
   });
 };
 
-router.get("/health", (_request, response) => {
+router.get("/health", async (_request, response) => {
+  await readPlannerData();
   response.json({ status: "ok" });
 });
 

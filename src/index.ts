@@ -1,5 +1,7 @@
+import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import { initializePlannerStore } from "./lib/plannerStore.js";
 import plannerRoutes from "./routes/plannerRoutes.js";
 
 const app = express();
@@ -38,6 +40,15 @@ app.use(
   },
 );
 
-app.listen(port, () => {
-  console.log(`Planner backend running on http://localhost:${port}`);
+async function startServer() {
+  await initializePlannerStore();
+
+  app.listen(port, () => {
+    console.log(`Planner backend running on http://localhost:${port}`);
+  });
+}
+
+void startServer().catch((error) => {
+  console.error("Failed to start backend.", error);
+  process.exit(1);
 });
