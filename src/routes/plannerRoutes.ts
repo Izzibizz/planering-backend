@@ -9,6 +9,8 @@ import {
   checklistIds,
   checklistUpdateItemSchema,
   galleryFeaturedUpdateSchema,
+  galleryImageUpdateSchema,
+  galleryReorderSchema,
   gallerySchema,
   pageContentUpdateSchema,
   type PlannerData,
@@ -271,6 +273,10 @@ router.post(
 
     const altText =
       typeof request.body.alt === "string" ? request.body.alt.trim() : "";
+    const captionText =
+      typeof request.body.caption === "string"
+        ? request.body.caption.trim()
+        : "";
     const plannerData = await readPlannerData();
     const uploadedAt = new Date().toISOString();
 
@@ -284,7 +290,8 @@ router.post(
           publicId: uploadedImage.publicId,
           url: uploadedImage.url,
           thumbnailUrl: uploadedImage.thumbnailUrl,
-          alt: altText || fallbackAlt,
+          alt: altText || captionText || fallbackAlt,
+          caption: captionText || altText || fallbackAlt,
           uploadedAt,
         };
       }),
@@ -332,6 +339,89 @@ router.put("/gallery/featured", async (request, response) => {
   }
 });
 
+router.patch("/gallery/:imageId", async (request, response) => {
+  try {
+    const updates = galleryImageUpdateSchema.parse(request.body);
+    const plannerData = await readPlannerData();
+    const image = plannerData.gallery.images.find(
+      (entry) => entry.id === request.params.imageId,
+    );
+
+    if (!image) {
+      return response.status(404).json({ message: "Image not found." });
+    }
+
+    if (updates.alt !== undefined) {
+      image.alt = updates.alt.trim();
+    }
+
+    if (updates.caption !== undefined) {
+      image.caption = updates.caption.trim();
+    }
+
+    plannerData.updatedAt = new Date().toISOString();
+    await writePlannerData(plannerData);
+
+    response.json(image);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return sendValidationError(response, error);
+    }
+
+    throw error;
+  }
+});
+
+const saveGalleryReorderHandler = async (
+  request: Parameters<typeof router.put>[1] extends (...args: infer T) => unknown
+    ? T[0]
+    : never,
+  response: Parameters<typeof router.put>[1] extends (...args: infer T) => unknown
+    ? T[1]
+    : never,
+) => {
+  try {
+    const { orderedIds } = galleryReorderSchema.parse(request.body);
+    const plannerData = await readPlannerData();
+
+    if (orderedIds.length !== plannerData.gallery.images.length) {
+      return response
+        .status(400)
+        .json({ message: "Image order does not match gallery size." });
+    }
+
+    const currentIds = new Set(
+      plannerData.gallery.images.map((image) => image.id),
+    );
+    const hasUnknownId = orderedIds.some((id) => !currentIds.has(id));
+
+    if (hasUnknownId) {
+      return response
+        .status(400)
+        .json({ message: "Image order contains unknown ids." });
+    }
+
+    plannerData.gallery.images = orderedIds
+      .map((id) => plannerData.gallery.images.find((image) => image.id === id))
+      .filter((image): image is NonNullable<typeof image> => Boolean(image));
+
+    plannerData.updatedAt = new Date().toISOString();
+    await writePlannerData(plannerData);
+
+    response.json(plannerData.gallery);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return sendValidationError(response, error);
+    }
+
+    throw error;
+  }
+};
+
+router.put("/gallery/reorder", saveGalleryReorderHandler);
+router.patch("/gallery/reorder", saveGalleryReorderHandler);
+router.post("/gallery/reorder", saveGalleryReorderHandler);
+
 router.delete("/gallery/:imageId", async (request, response) => {
   const plannerData = await readPlannerData();
   const image = plannerData.gallery.images.find(
@@ -360,7 +450,6 @@ router.delete("/gallery/:imageId", async (request, response) => {
 
   response.status(204).send();
 });
-
 router.get("/checklists", async (_request, response) => {
   const plannerData = await readPlannerData();
   response.json(plannerData.checklists);

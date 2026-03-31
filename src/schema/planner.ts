@@ -35,6 +35,7 @@ export const galleryImageSchema = z.object({
   url: z.string().url(),
   thumbnailUrl: z.string().url(),
   alt: z.string().max(200).default(""),
+  caption: z.string().max(300).default(""),
   uploadedAt: z.string().datetime(),
 });
 
@@ -79,6 +80,19 @@ export const calendarNoteUpsertSchema = z.object({
 
 export const galleryFeaturedUpdateSchema = z.object({
   imageId: z.string().nullable(),
+});
+
+export const galleryImageUpdateSchema = z
+  .object({
+    alt: z.string().max(200).optional(),
+    caption: z.string().max(300).optional(),
+  })
+  .refine((value) => value.alt !== undefined || value.caption !== undefined, {
+    message: "Provide alt and/or caption to update an image.",
+  });
+
+export const galleryReorderSchema = z.object({
+  orderedIds: z.array(z.string().min(1)),
 });
 
 export type ChecklistId = z.infer<typeof checklistIdSchema>;

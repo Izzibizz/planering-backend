@@ -51,10 +51,11 @@ export async function uploadImageBuffer(
             secure: true,
             transformation: [
               {
-                width: 480,
-                height: 360,
-                crop: "fill",
+                width: 900,
+                height: 1200,
+                crop: "pad",
                 gravity: "auto",
+                background: "auto",
                 fetch_format: "auto",
                 quality: "auto",
               },
